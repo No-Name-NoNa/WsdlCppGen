@@ -6,53 +6,43 @@ on:
   pull_request:
 
 jobs:
-  windows-msvc:
-    name: Windows MSVC
+  windows-msys2:
+    name: Windows MSYS2 UCRT64
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
-          arch: x64
-
-      - name: Install Vulkan SDK
-        uses: jakoch/install-vulkan-sdk-action@v1
-        with:
-          cache: true
-          install_runtime: true
-          stripdown: true
-
-      - name: Install GLFW with vcpkg
-        shell: pwsh
-        run: |
-          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
-          if (-not $vcpkgRoot) {
-            $vcpkgRoot = "C:\vcpkg"
-          }
-          & "$vcpkgRoot\vcpkg.exe" install glfw3:x64-windows
-          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-vulkan-headers
+            mingw-w64-ucrt-x86_64-vulkan-loader
 
       - name: Configure
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          cmake -S . -B build -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
+        shell: msys2 {0}
         run: cmake --build build --config Release
 
       - name: Generate sample proxy
-        shell: pwsh
-        run: .\build\WsdlCppGen.exe --wsdl samples\AddService.wsdl --out generated-ci
+        shell: msys2 {0}
+        run: ./build/WsdlCppGen.exe --wsdl samples/AddService.wsdl --out generated-ci
 
       - name: Compile generated WinHTTP proxy
-        shell: pwsh
-        run: cl /std:c++latest /EHsc /Igenerated-ci /c generated-ci\AddServiceClient.cpp /Fobuild\AddServiceClient.obj
+        shell: msys2 {0}
+        run: g++ -std=c++26 -Igenerated-ci -c generated-ci/AddServiceClient.cpp -o build/AddServiceClient.o
 
   ubuntu:
     name: Ubuntu
