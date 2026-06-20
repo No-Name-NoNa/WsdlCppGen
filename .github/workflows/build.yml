@@ -53,6 +53,23 @@ jobs:
         working-directory: service/addservice-go
         run: go test ./...
 
+      - name: Package artifacts
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist/WsdlCppGen-windows
+          cp build/WsdlCppGen.exe dist/WsdlCppGen-windows/
+          cp build/WsdlCppGenCli.exe dist/WsdlCppGen-windows/
+          cp -r build/font dist/WsdlCppGen-windows/
+          cp -r build/img dist/WsdlCppGen-windows/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WsdlCppGen-windows
+          path: dist/WsdlCppGen-windows
+          if-no-files-found: error
+          retention-days: 30
+
   ubuntu:
     name: Ubuntu
     runs-on: ubuntu-latest
@@ -89,6 +106,24 @@ jobs:
       - name: Test Go AddService
         working-directory: service/addservice-go
         run: go test ./...
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist/WsdlCppGen-ubuntu
+          cp build/WsdlCppGen dist/WsdlCppGen-ubuntu/
+          cp build/WsdlCppGenCli dist/WsdlCppGen-ubuntu/
+          cp -r build/font dist/WsdlCppGen-ubuntu/
+          cp -r build/img dist/WsdlCppGen-ubuntu/
+          chmod +x dist/WsdlCppGen-ubuntu/WsdlCppGen
+          chmod +x dist/WsdlCppGen-ubuntu/WsdlCppGenCli
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WsdlCppGen-ubuntu
+          path: dist/WsdlCppGen-ubuntu
+          if-no-files-found: error
+          retention-days: 30
 
   macos:
     name: macOS
@@ -130,3 +165,21 @@ jobs:
       - name: Test Go AddService
         working-directory: service/addservice-go
         run: go test ./...
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist/WsdlCppGen-macos
+          cp build/WsdlCppGen dist/WsdlCppGen-macos/
+          cp build/WsdlCppGenCli dist/WsdlCppGen-macos/
+          cp -r build/font dist/WsdlCppGen-macos/
+          cp -r build/img dist/WsdlCppGen-macos/
+          chmod +x dist/WsdlCppGen-macos/WsdlCppGen
+          chmod +x dist/WsdlCppGen-macos/WsdlCppGenCli
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WsdlCppGen-macos
+          path: dist/WsdlCppGen-macos
+          if-no-files-found: error
+          retention-days: 30
