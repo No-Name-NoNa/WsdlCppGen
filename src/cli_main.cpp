@@ -7,18 +7,14 @@
 #include <string>
 #include <vector>
 
-int RunGuiApp(const char* executable_path);
-
 namespace
 {
 void PrintUsage()
 {
     std::cout
         << "Usage:\n"
-        << "  WsdlCppGen --wsdl <file.wsdl> --out <dir> [--service-name <Name>]\n"
-        << "  WsdlCppGen --help\n"
-        << "\n"
-        << "No arguments starts the ImGui interface.\n";
+        << "  WsdlCppGenCli --wsdl <file.wsdl> --out <dir> [--service-name <Name>]\n"
+        << "  WsdlCppGenCli --help\n";
 }
 
 bool HasArg(const std::vector<std::string>& args, const std::string& name)
@@ -40,9 +36,6 @@ int main(int argc, char** argv)
     try
     {
         std::vector<std::string> args(argv + 1, argv + argc);
-        if (args.empty())
-            return RunGuiApp(argv[0]);
-
         if (HasArg(args, "--help") || HasArg(args, "-h"))
         {
             PrintUsage();

@@ -27,6 +27,11 @@ jobs:
             mingw-w64-ucrt-x86_64-vulkan-headers
             mingw-w64-ucrt-x86_64-vulkan-loader
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
       - name: Configure
         shell: msys2 {0}
         run: |
@@ -38,11 +43,15 @@ jobs:
 
       - name: Generate sample proxy
         shell: msys2 {0}
-        run: ./build/WsdlCppGen.exe --wsdl samples/AddService.wsdl --out generated-ci
+        run: ./build/WsdlCppGenCli.exe --wsdl samples/AddService.wsdl --out generated-ci
 
       - name: Compile generated WinHTTP proxy
         shell: msys2 {0}
         run: g++ -std=c++26 -Igenerated-ci -c generated-ci/AddServiceClient.cpp -o build/AddServiceClient.o
+
+      - name: Test Go AddService
+        working-directory: service/addservice-go
+        run: go test ./...
 
   ubuntu:
     name: Ubuntu
@@ -54,7 +63,12 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc-14 g++-14 libglfw3-dev libvulkan-dev libcurl4-openssl-dev
+          sudo apt-get install -y cmake ninja-build gcc-14 g++-14 libglfw3-dev libvulkan-dev libcurl4-openssl-dev zenity
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
 
       - name: Configure
         run: |
@@ -67,10 +81,14 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Generate sample proxy
-        run: ./build/WsdlCppGen --wsdl samples/AddService.wsdl --out generated-ci
+        run: ./build/WsdlCppGenCli --wsdl samples/AddService.wsdl --out generated-ci
 
       - name: Compile generated libcurl proxy
         run: g++-14 -std=c++26 -DWSDLCPPGEN_USE_LIBCURL -Igenerated-ci -c generated-ci/AddServiceClient.cpp -o build/AddServiceClient.o
+
+      - name: Test Go AddService
+        working-directory: service/addservice-go
+        run: go test ./...
 
   macos:
     name: macOS
@@ -81,6 +99,11 @@ jobs:
 
       - name: Install dependencies
         run: brew install cmake ninja glfw vulkan-tools curl llvm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
 
       - name: Configure
         run: |
@@ -93,7 +116,7 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Generate sample proxy
-        run: ./build/WsdlCppGen --wsdl samples/AddService.wsdl --out generated-ci
+        run: ./build/WsdlCppGenCli --wsdl samples/AddService.wsdl --out generated-ci
 
       - name: Compile generated libcurl proxy
         run: |
@@ -103,3 +126,7 @@ jobs:
             -I"$(brew --prefix curl)/include" \
             -c generated-ci/AddServiceClient.cpp \
             -o build/AddServiceClient.o
+
+      - name: Test Go AddService
+        working-directory: service/addservice-go
+        run: go test ./...
