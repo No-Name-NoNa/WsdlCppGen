@@ -1,0 +1,115 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  windows-msvc:
+    name: Windows MSVC
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          cache: true
+          install_runtime: true
+          stripdown: true
+
+      - name: Install GLFW with vcpkg
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) {
+            $vcpkgRoot = "C:\vcpkg"
+          }
+          & "$vcpkgRoot\vcpkg.exe" install glfw3:x64-windows
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Generate sample proxy
+        shell: pwsh
+        run: .\build\WsdlCppGen.exe --wsdl samples\AddService.wsdl --out generated-ci
+
+      - name: Compile generated WinHTTP proxy
+        shell: pwsh
+        run: cl /std:c++latest /EHsc /Igenerated-ci /c generated-ci\AddServiceClient.cpp /Fobuild\AddServiceClient.obj
+
+  ubuntu:
+    name: Ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc-14 g++-14 libglfw3-dev libvulkan-dev libcurl4-openssl-dev
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-14 \
+            -DCMAKE_CXX_COMPILER=g++-14
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Generate sample proxy
+        run: ./build/WsdlCppGen --wsdl samples/AddService.wsdl --out generated-ci
+
+      - name: Compile generated libcurl proxy
+        run: g++-14 -std=c++26 -DWSDLCPPGEN_USE_LIBCURL -Igenerated-ci -c generated-ci/AddServiceClient.cpp -o build/AddServiceClient.o
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja glfw vulkan-tools curl llvm
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="$(brew --prefix llvm)/bin/clang" \
+            -DCMAKE_CXX_COMPILER="$(brew --prefix llvm)/bin/clang++"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Generate sample proxy
+        run: ./build/WsdlCppGen --wsdl samples/AddService.wsdl --out generated-ci
+
+      - name: Compile generated libcurl proxy
+        run: |
+          "$(brew --prefix llvm)/bin/clang++" -std=c++26 \
+            -DWSDLCPPGEN_USE_LIBCURL \
+            -Igenerated-ci \
+            -I"$(brew --prefix curl)/include" \
+            -c generated-ci/AddServiceClient.cpp \
+            -o build/AddServiceClient.o
