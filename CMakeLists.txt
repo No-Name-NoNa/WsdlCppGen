@@ -39,6 +39,7 @@ add_executable(WsdlCppGen
         WIN32
         src/gui_main.cpp
         src/gui_app.cpp
+        src/ui_sprites.cpp
         src/native_dialogs.cpp
 )
 
@@ -57,9 +58,9 @@ target_link_libraries(WsdlCppGen PRIVATE
         Vulkan::Vulkan
 )
 
-if(WIN32)
-        target_link_libraries(WsdlCppGen PRIVATE ole32 uuid shell32)
-endif()
+if (WIN32)
+    target_link_libraries(WsdlCppGen PRIVATE ole32 uuid shell32)
+endif ()
 
 add_executable(WsdlCppGenCli
         src/cli_main.cpp
@@ -69,17 +70,17 @@ target_link_libraries(WsdlCppGenCli PRIVATE
         WsdlCppGenCore
 )
 
-if(WSDLCPPGEN_BUILD_CLIENT_DEMO)
-        add_executable(AddServiceClientDemo
-                samples/cpp_client_demo.cpp
-                generated/AddServiceClient.cpp
-        )
-        target_include_directories(AddServiceClientDemo PRIVATE generated)
-        if(WIN32)
-                target_link_libraries(AddServiceClientDemo PRIVATE winhttp)
-        else()
-                find_package(CURL REQUIRED)
-                target_compile_definitions(AddServiceClientDemo PRIVATE WSDLCPPGEN_USE_LIBCURL)
-                target_link_libraries(AddServiceClientDemo PRIVATE CURL::libcurl)
-        endif()
-endif()
+if (WSDLCPPGEN_BUILD_CLIENT_DEMO)
+    add_executable(AddServiceClientDemo
+            samples/cpp_client_demo.cpp
+            generated/AddServiceClient.cpp
+    )
+    target_include_directories(AddServiceClientDemo PRIVATE generated)
+    if (WIN32)
+        target_link_libraries(AddServiceClientDemo PRIVATE winhttp)
+    else ()
+        find_package(CURL REQUIRED)
+        target_compile_definitions(AddServiceClientDemo PRIVATE WSDLCPPGEN_USE_LIBCURL)
+        target_link_libraries(AddServiceClientDemo PRIVATE CURL::libcurl)
+    endif ()
+endif ()
