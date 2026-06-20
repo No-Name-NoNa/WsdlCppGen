@@ -8,6 +8,8 @@
 
 #include <array>
 #include <algorithm>
+#include <memory>
+#include <mutex>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -17,6 +19,8 @@
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #define GLFW_INCLUDE_VULKAN
@@ -138,6 +142,7 @@ namespace {
         ImGui_ImplVulkanH_Window main_window;
         uint32_t min_image_count = 2;
         WsdlCppGen::UiSpriteAtlas sprites;
+        bool swapchain_rebuild_requested = false;
 
         bool IsRenderable() const {
             if (!window)
@@ -267,23 +272,29 @@ namespace {
             glfwGetFramebufferSize(window, &width, &height);
             if (width <= 0 || height <= 0)
                 return;
-            if (main_window.Width == width && main_window.Height == height)
+            if (!swapchain_rebuild_requested && main_window.Width == width && main_window.Height == height)
                 return;
             vkDeviceWaitIdle(device);
             ImGui_ImplVulkan_SetMinImageCount(min_image_count);
             ImGui_ImplVulkanH_CreateOrResizeWindow(instance, physical_device, device, &main_window, queue_family,
                                                    nullptr, width, height, min_image_count, 0);
+            swapchain_rebuild_requested = false;
         }
 
-        void RenderFrame() {
+        bool RenderFrame() {
             ImGui_ImplVulkanH_Window *wd = &main_window;
             VkSemaphore image_acquired = wd->FrameSemaphores[wd->SemaphoreIndex].ImageAcquiredSemaphore;
             VkSemaphore render_complete = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
             VkResult result = vkAcquireNextImageKHR(device, wd->Swapchain, UINT64_MAX, image_acquired, VK_NULL_HANDLE,
                                                     &wd->FrameIndex);
-            if (result == VK_ERROR_OUT_OF_DATE_KHR)
-                return;
-            CheckVk(result);
+            if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+                swapchain_rebuild_requested = true;
+                return false;
+            }
+            if (result == VK_SUBOPTIMAL_KHR)
+                swapchain_rebuild_requested = true;
+            else
+                CheckVk(result);
 
             ImGui_ImplVulkanH_Frame *fd = &wd->Frames[wd->FrameIndex];
             CheckVk(vkWaitForFences(device, 1, &fd->Fence, VK_TRUE, UINT64_MAX));
@@ -319,6 +330,7 @@ namespace {
             submit_info.signalSemaphoreCount = 1;
             submit_info.pSignalSemaphores = &render_complete;
             CheckVk(vkQueueSubmit(queue, 1, &submit_info, fd->Fence));
+            return true;
         }
 
         void PresentFrame() {
@@ -332,7 +344,13 @@ namespace {
             present_info.pSwapchains = &wd->Swapchain;
             present_info.pImageIndices = &wd->FrameIndex;
             VkResult result = vkQueuePresentKHR(queue, &present_info);
-            if (result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR)
+            if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+                swapchain_rebuild_requested = true;
+                return;
+            }
+            if (result == VK_SUBOPTIMAL_KHR)
+                swapchain_rebuild_requested = true;
+            else
                 CheckVk(result);
             wd->SemaphoreIndex = (wd->SemaphoreIndex + 1) % wd->SemaphoreCount;
         }
@@ -359,19 +377,103 @@ namespace {
         }
     };
 
+    enum class PendingDialogKind {
+        None,
+        WsdlFile,
+        OutputDirectory,
+    };
+
+    struct DialogJob {
+        std::mutex mutex;
+        WsdlCppGen::DialogResult result;
+        std::string previous_log;
+        bool previous_has_error = false;
+        bool done = false;
+    };
+
     struct GuiState {
         std::array<char, PathBufferSize> wsdl_path{};
         std::array<char, PathBufferSize> output_dir{};
         std::array<char, 128> service_name{};
         std::string log = "Ready.";
+        std::shared_ptr<DialogJob> dialog_job;
+        PendingDialogKind pending_dialog = PendingDialogKind::None;
         bool close_confirm_requested = false;
     };
+
+    bool DialogBusy(const GuiState &state) {
+        return state.dialog_job != nullptr;
+    }
+
+    void ApplyDialogResult(GuiState &state, PendingDialogKind completed_kind,
+                           const WsdlCppGen::DialogResult &result, bool &has_error) {
+        if (result.path) {
+            if (completed_kind == PendingDialogKind::WsdlFile)
+                CopyToBuffer(state.wsdl_path, *result.path);
+            else if (completed_kind == PendingDialogKind::OutputDirectory)
+                CopyToBuffer(state.output_dir, *result.path);
+            state.log = "Selected: " + *result.path;
+            has_error = false;
+        } else if (!result.error.empty()) {
+            state.log = result.error;
+            has_error = true;
+        }
+    }
+
+    void StartDialog(GuiState &state, PendingDialogKind kind,
+                     const std::function<WsdlCppGen::DialogResult()> &select_path, bool &has_error) {
+        if (DialogBusy(state))
+            return;
+
+        std::shared_ptr<DialogJob> job = std::make_shared<DialogJob>();
+        job->previous_log = state.log;
+        job->previous_has_error = has_error;
+        state.dialog_job = job;
+        state.pending_dialog = kind;
+        state.log = "Waiting for file picker...";
+        has_error = false;
+
+        std::thread([job, select_path]() {
+            WsdlCppGen::DialogResult result = select_path();
+            std::lock_guard<std::mutex> lock(job->mutex);
+            job->result = std::move(result);
+            job->done = true;
+        }).detach();
+    }
+
+    void PollDialog(GuiState &state, bool &has_error) {
+        if (!state.dialog_job)
+            return;
+
+        WsdlCppGen::DialogResult result;
+        std::string previous_log;
+        bool previous_has_error = false;
+        {
+            std::lock_guard<std::mutex> lock(state.dialog_job->mutex);
+            if (!state.dialog_job->done)
+                return;
+            result = std::move(state.dialog_job->result);
+            previous_log = std::move(state.dialog_job->previous_log);
+            previous_has_error = state.dialog_job->previous_has_error;
+        }
+
+        const PendingDialogKind completed_kind = state.pending_dialog;
+        state.dialog_job.reset();
+        state.pending_dialog = PendingDialogKind::None;
+
+        if (result.path || !result.error.empty()) {
+            ApplyDialogResult(state, completed_kind, result, has_error);
+        } else {
+            state.log = previous_log;
+            has_error = previous_has_error;
+        }
+    }
 
     void DrawPathInput(WsdlCppGen::UiSpriteAtlas &sprites, const char *label, std::array<char, PathBufferSize> &buffer,
                        const char *button, WsdlCppGen::SpriteIcon icon, float y, const ImVec2 &content_min,
                        const ImVec2 &content_max, float scale,
-                       const std::function<WsdlCppGen::DialogResult()> &select_path, std::string &log,
-                       bool &has_error) {
+                       GuiState &state, PendingDialogKind dialog_kind,
+                       const std::function<WsdlCppGen::DialogResult()> &select_path, bool &has_error) {
         const float label_width = 104.0f * scale;
         const float button_width = 116.0f * scale;
         const float icon_size = 16.0f * scale;
@@ -390,17 +492,21 @@ namespace {
                                     input_width);
 
         ImGui::SetCursorScreenPos(ImVec2(button_x, y));
-        if (WsdlCppGen::SpriteButton(sprites, button, ImVec2(button_width, frame_height),
-                                     WsdlCppGen::SpriteButtonKind::Secondary, icon, icon_size)) {
+        const bool busy = DialogBusy(state);
+        if (busy)
+            ImGui::BeginDisabled();
+        const char *button_label = state.pending_dialog == dialog_kind ? "Waiting" : button;
+        const bool pressed = WsdlCppGen::SpriteButton(sprites, button_label, ImVec2(button_width, frame_height),
+                                                      WsdlCppGen::SpriteButtonKind::Secondary, icon, icon_size);
+        if (busy)
+            ImGui::EndDisabled();
+        if (pressed) {
+#if defined(_WIN32)
             WsdlCppGen::DialogResult result = select_path();
-            if (result.path) {
-                CopyToBuffer(buffer, *result.path);
-                log = "Selected: " + *result.path;
-                has_error = false;
-            } else if (!result.error.empty()) {
-                log = result.error;
-                has_error = true;
-            }
+            ApplyDialogResult(state, dialog_kind, result, has_error);
+#else
+            StartDialog(state, dialog_kind, select_path, has_error);
+#endif
         }
     }
 
@@ -467,6 +573,7 @@ namespace {
 
     void DrawGeneratorUi(WsdlCppGen::UiSpriteAtlas &sprites, GuiState &state, GLFWwindow *window) {
         static bool has_error = false;
+        PollDialog(state, has_error);
         constexpr float BaseWidth = 1120.0f;
         constexpr float BaseHeight = 720.0f;
 
@@ -501,10 +608,11 @@ namespace {
         float y = content_min.y;
 
         DrawPathInput(sprites, "WSDL", state.wsdl_path, "Browse", WsdlCppGen::SpriteIcon::File, y, content_min,
-                      content_max, scale, WsdlCppGen::SelectWsdlFile, state.log, has_error);
+                      content_max, scale, state, PendingDialogKind::WsdlFile, WsdlCppGen::SelectWsdlFile, has_error);
         y += frame_height + row_gap;
         DrawPathInput(sprites, "Output", state.output_dir, "Choose", WsdlCppGen::SpriteIcon::Folder, y, content_min,
-                      content_max, scale, WsdlCppGen::SelectOutputDirectory, state.log, has_error);
+                      content_max, scale, state, PendingDialogKind::OutputDirectory, WsdlCppGen::SelectOutputDirectory,
+                      has_error);
         y += frame_height + row_gap;
 
         ImGui::SetCursorScreenPos(ImVec2(content_min.x, y));
@@ -602,8 +710,8 @@ int RunGuiApp(const char *executable_path) {
             DrawGeneratorUi(app.sprites, state, app.window);
 
             ImGui::Render();
-            app.RenderFrame();
-            app.PresentFrame();
+            if (app.RenderFrame())
+                app.PresentFrame();
         }
 
         app.Cleanup();

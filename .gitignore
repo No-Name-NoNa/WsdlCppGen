@@ -1,5 +1,6 @@
 .idea
 cmake-build-debug
+build-linux-gcc14
 cmake-build-*
 build/
 dist/

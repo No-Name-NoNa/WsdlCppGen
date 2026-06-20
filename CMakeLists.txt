@@ -8,6 +8,7 @@ option(WSDLCPPGEN_BUILD_CLIENT_DEMO "Build the generated AddService C++ client d
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
+find_package(Threads REQUIRED)
 
 ## CMAKE_PREFIX_PATH=D:\msys2\ucrt64
 
@@ -57,6 +58,7 @@ target_link_libraries(WsdlCppGen PRIVATE
         WsdlCppGenCore
         glfw
         Vulkan::Vulkan
+        Threads::Threads
 )
 
 if (WIN32)
