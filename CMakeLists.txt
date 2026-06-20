@@ -22,31 +22,32 @@ set(IMGUI_SRCS
         ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
 )
 
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/font"
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/font"
         DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/img"
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/img"
         DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 add_library(WsdlCppGenCore STATIC
-        src/wsdl_codegen.cpp
+        src/core/wsdl_codegen.cpp
 )
 
 target_include_directories(WsdlCppGenCore PUBLIC
-        src
+        src/core
 )
 
 add_executable(WsdlCppGen
         WIN32
-        src/gui_main.cpp
-        src/gui_app.cpp
-        src/ui_sprites.cpp
-        src/native_dialogs.cpp
+        apps/gui/main.cpp
+        src/gui/gui_app.cpp
+        src/gui/ui_sprites.cpp
+        src/platform/native_dialogs.cpp
 )
 
 target_sources(WsdlCppGen PRIVATE ${IMGUI_SRCS})
 
 target_include_directories(WsdlCppGen PRIVATE
-        src
+        src/gui
+        src/platform
         ${IMGUI_DIR}
         ${IMGUI_DIR}/backends
         ${Vulkan_INCLUDE_DIRS}
@@ -63,7 +64,7 @@ if (WIN32)
 endif ()
 
 add_executable(WsdlCppGenCli
-        src/cli_main.cpp
+        apps/cli/main.cpp
 )
 
 target_link_libraries(WsdlCppGenCli PRIVATE
@@ -71,11 +72,29 @@ target_link_libraries(WsdlCppGenCli PRIVATE
 )
 
 if (WSDLCPPGEN_BUILD_CLIENT_DEMO)
-    add_executable(AddServiceClientDemo
-            samples/cpp_client_demo.cpp
-            generated/AddServiceClient.cpp
+    set(ADD_SERVICE_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/addservice")
+    set(ADD_SERVICE_GENERATED_HEADER "${ADD_SERVICE_GENERATED_DIR}/AddServiceClient.h")
+    set(ADD_SERVICE_GENERATED_SOURCE "${ADD_SERVICE_GENERATED_DIR}/AddServiceClient.cpp")
+
+    add_custom_command(
+            OUTPUT
+                "${ADD_SERVICE_GENERATED_HEADER}"
+                "${ADD_SERVICE_GENERATED_SOURCE}"
+            COMMAND
+                "$<TARGET_FILE:WsdlCppGenCli>"
+                --wsdl "${CMAKE_CURRENT_SOURCE_DIR}/examples/addservice/wsdl/AddService.wsdl"
+                --out "${ADD_SERVICE_GENERATED_DIR}"
+            DEPENDS
+                WsdlCppGenCli
+                "${CMAKE_CURRENT_SOURCE_DIR}/examples/addservice/wsdl/AddService.wsdl"
+            VERBATIM
     )
-    target_include_directories(AddServiceClientDemo PRIVATE generated)
+
+    add_executable(AddServiceClientDemo
+            examples/addservice/client-cpp/main.cpp
+            "${ADD_SERVICE_GENERATED_SOURCE}"
+    )
+    target_include_directories(AddServiceClientDemo PRIVATE "${ADD_SERVICE_GENERATED_DIR}")
     if (WIN32)
         target_link_libraries(AddServiceClientDemo PRIVATE winhttp)
     else ()

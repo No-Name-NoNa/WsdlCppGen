@@ -43,14 +43,14 @@ jobs:
 
       - name: Generate sample proxy
         shell: msys2 {0}
-        run: ./build/WsdlCppGenCli.exe --wsdl samples/AddService.wsdl --out generated-ci
+        run: ./build/WsdlCppGenCli.exe --wsdl examples/addservice/wsdl/AddService.wsdl --out generated-ci
 
       - name: Compile generated WinHTTP proxy
         shell: msys2 {0}
         run: g++ -std=c++26 -Igenerated-ci -c generated-ci/AddServiceClient.cpp -o build/AddServiceClient.o
 
       - name: Test Go AddService
-        working-directory: service/addservice-go
+        working-directory: examples/addservice/server-go
         run: go test ./...
 
       - name: Package artifacts
@@ -98,13 +98,13 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Generate sample proxy
-        run: ./build/WsdlCppGenCli --wsdl samples/AddService.wsdl --out generated-ci
+        run: ./build/WsdlCppGenCli --wsdl examples/addservice/wsdl/AddService.wsdl --out generated-ci
 
       - name: Compile generated libcurl proxy
         run: g++-14 -std=c++26 -DWSDLCPPGEN_USE_LIBCURL -Igenerated-ci -c generated-ci/AddServiceClient.cpp -o build/AddServiceClient.o
 
       - name: Test Go AddService
-        working-directory: service/addservice-go
+        working-directory: examples/addservice/server-go
         run: go test ./...
 
       - name: Package artifacts
@@ -151,7 +151,7 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Generate sample proxy
-        run: ./build/WsdlCppGenCli --wsdl samples/AddService.wsdl --out generated-ci
+        run: ./build/WsdlCppGenCli --wsdl examples/addservice/wsdl/AddService.wsdl --out generated-ci
 
       - name: Compile generated libcurl proxy
         run: |
@@ -163,7 +163,7 @@ jobs:
             -o build/AddServiceClient.o
 
       - name: Test Go AddService
-        working-directory: service/addservice-go
+        working-directory: examples/addservice/server-go
         run: go test ./...
 
       - name: Package artifacts

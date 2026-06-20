@@ -1,2 +1,13 @@
 .idea
 cmake-build-debug
+cmake-build-*
+build/
+dist/
+generated/
+generated-*/
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+*.log
